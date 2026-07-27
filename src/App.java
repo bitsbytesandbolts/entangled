@@ -127,23 +127,42 @@ public class App {
 
             int puzzleWidth = 4;
             int puzzleHeight = 4;
-            long blockedBitboard = 0;//(1L << 0);// | (1L << 5) | (1L << 6); // Example blocked squares
-            boolean removeSymmetries = (puzzleWidth == puzzleHeight) && blockedBitboard == 0; // Only remove symmetries for square puzzles with no blocked squares
-            //removeSymmetries = true; // Override to always remove symmetries, comment out to bypass
 
-            // Trying this heuristic to cut down the search space based on good puzzles I've found so far
+            long blockedBitboard = 0;
+            // Example:
+            // long blockedBitboard = (1L << 0) | (1L << 5) | (1L << 6);
+
+            boolean removeSymmetries =
+                (puzzleWidth == puzzleHeight) && blockedBitboard == 0;
+
+            // Override if needed:
+            // removeSymmetries = true;
+            // removeSymmetries = false;
+
+            // Trying this heuristic to cut down the search space based on
+            // good puzzles found so far.
             int areaMin = 7;
             int areaMax = 10;
             int monominoLimit = 1;
-            int mustHavePieceOfSize = 0; // between A and B, at least one piece must be of this size or larger. Set to 0 to ignore.
-            ArrayList<PieceGrouper.EntangledGroupPair> allGroups = grouper.generateEntangledPairs(new String[]{
+
+            // Between A and B, at least one piece must be this size or larger.
+            // Set to 0 to ignore.
+            int mustHavePieceOfSize = 0;
+
+            String[] piecePool = new String[]{
                 "0",
-                "1", "2I", "2I90", "3I", "3I90", "3L", "3L90", "3L180", "3L270", 
-                "4O", "4I", "4I90", 
-                "4L", "4L90", "4L180", "4L270", 
+                "1",
+                "2I", "2I90",
+                "3I", "3I90",
+                "3L", "3L90", "3L180", "3L270",
+                "4O",
+                "4I", "4I90",
+                "4L", "4L90", "4L180", "4L270",
                 "4J", "4J90", "4J180", "4J270",
                 "4T", "4T90", "4T180", "4T270",
-                "4S", "4S90", "4Z", "4Z90",
+                "4S", "4S90",
+                "4Z", "4Z90"
+
                 // "5F", "5F90", "5F180", "5F270",
                 // "5f", "5f90", "5f180", "5f270",
                 // "5I", "5I90",
@@ -157,52 +176,156 @@ public class App {
                 // "5U", "5U90", "5U180", "5U270",
                 // "5V", "5V90", "5V180", "5V270",
                 // "5W", "5W90", "5W180", "5W270",
-                // "5X", 
+                // "5X",
                 // "5Y", "5Y90", "5Y180", "5Y270",
                 // "5y", "5y90", "5y180", "5y270",
-                // "5Z", "5Z90", 
+                // "5Z", "5Z90",
                 // "5S", "5S90"
+            };
 
-            }, groupSize, puzzleWidth, puzzleHeight, areaMin, areaMax, monominoLimit, mustHavePieceOfSize, removeSymmetries);
+            /*
+            * RANDOM GROUP GENERATION
+            *
+            * When true, generate exactly randomEntangledPairCount valid,
+            * unique random pairings without first building the exhaustive list.
+            *
+            * When false, fall back to the original exhaustive generator.
+            */
+            boolean useRandomPairGeneration = false;
+
+            int threadCount = 8;
+
+            // This replaces the old:
+            //
+            //     sampleSizePerThread = 10000
+            //
+            // With 8 threads, the old target was effectively about 80,000 searches.
+            int randomPairsPerThread = 10000;
+            int randomEntangledPairCount = randomPairsPerThread * threadCount;
+
+            /*
+            * A fixed seed makes the generated sample reproducible.
+            *
+            * Use the same seed to regenerate the same group list.
+            * Replace this with System.nanoTime() for a new sample every run.
+            */
+            long randomGroupSeed = 20260727L;
+            // long randomGroupSeed = System.nanoTime();
+
+            ArrayList<PieceGrouper.EntangledGroupPair> allGroups;
+
+            if (useRandomPairGeneration) {
+                allGroups = grouper.generateRandomEntangledPairs(
+                    piecePool,
+                    groupSize,
+                    puzzleWidth,
+                    puzzleHeight,
+                    areaMin,
+                    areaMax,
+                    monominoLimit,
+                    mustHavePieceOfSize,
+                    removeSymmetries,
+                    randomEntangledPairCount,
+                    randomGroupSeed
+                );
+            } else {
+                allGroups = grouper.generateEntangledPairs(
+                    piecePool,
+                    groupSize,
+                    puzzleWidth,
+                    puzzleHeight,
+                    areaMin,
+                    areaMax,
+                    monominoLimit,
+                    mustHavePieceOfSize,
+                    removeSymmetries
+                );
+            }
 
             System.out.println("Total groups to search: " + allGroups.size());
+            System.out.println("Random generation enabled: " + useRandomPairGeneration);
+
+            if (useRandomPairGeneration) {
+                System.out.println("Random groups requested: " + randomEntangledPairCount);
+                System.out.println("Random seed: " + randomGroupSeed);
+            }
+
             Thread.sleep(1000);
-            // Create a CSV file to hold search data
+
+            // Create a CSV file to hold search data.
             StringBuilder csvBuilderGlobal = new StringBuilder();
-            csvBuilderGlobal.append("GroupID,PiecesA,PiecesB,Packings,Islands,MaxEstimatedDiameter,StartStateA,StartStateB,EndStateA,EndStateB,TimeTaken(ms)\n");
 
-            boolean sampleOnly = true;
-            int sampleSizePerThread = 10000;
-            int csvRowCheckpoint = 1000; // print progress every N rows
+            csvBuilderGlobal.append(
+                "GroupID,"
+                    + "PiecesA,"
+                    + "PiecesB,"
+                    + "Packings,"
+                    + "Islands,"
+                    + "MaxEstimatedDiameter,"
+                    + "StartStateA,"
+                    + "StartStateB,"
+                    + "EndStateA,"
+                    + "EndStateB,"
+                    + "TimeTaken(ms)\n"
+            );
 
-            int packingsLowerLimit = 50; // Exclude puzzles with fewer than this many packings
-            int packingsUpperLimit = 50000000; // Only search for up to this many packings per group
+            /*
+            * Legacy post-generation sampling.
+            *
+            * This MUST remain false while useRandomPairGeneration is true.
+            * The new generator has already produced the desired random sample,
+            * so the search should process every entry in allGroups exactly once.
+            */
+            boolean sampleOnly = false;
+
+            /*
+            * Retained because the existing multithreading code may still refer
+            * to this variable. It has no effect while sampleOnly is false.
+            */
+            int sampleSizePerThread = randomPairsPerThread;
+
+            int csvRowCheckpoint = 1000; // Print progress every N rows.
+
+            int packingsLowerLimit = 50;
+            int packingsUpperLimit = 50000000;
             int interestingDiameterThreshold = 20;
             boolean connectedAB = false;
-            
-            // only make true under special circumstances
-            // solution numbers may be wrong for groups with identical pieces
-            // primarily this is useful for high piece counts and lots of monominos,
-            // where the only trustworthy numbers are for unique larger pieces,
-            // and the monominos would otherwise blow up the search time
+
+            /*
+            * Only make true under special circumstances.
+            *
+            * Solution numbers may be wrong for groups with identical pieces.
+            * This is primarily useful for high piece counts and many monominoes,
+            * where only the results for unique larger pieces are trustworthy and
+            * the monomino permutations would otherwise increase search time.
+            */
             boolean deduplicateIdenticalPiecePermutations = false;
 
             int globalStartIndex = 0;
             int globalEndIndex = allGroups.size();
 
-            // truncate allGroups to between globalStartIndex and globalEndIndex
-            ArrayList<PieceGrouper.EntangledGroupPair> groupsToSearch = new ArrayList<>(allGroups.subList(globalStartIndex, Math.min(globalEndIndex, allGroups.size())));
+            // Truncate allGroups to the requested global range.
+            ArrayList<PieceGrouper.EntangledGroupPair> groupsToSearch =
+                new ArrayList<>(
+                    allGroups.subList(
+                        globalStartIndex,
+                        Math.min(globalEndIndex, allGroups.size())
+                    )
+                );
 
-            // reverse order of arraylist
-            //java.util.Collections.reverse(groupsToSearch);
+            // Reverse order if desired.
+            // java.util.Collections.reverse(groupsToSearch);
 
-            // Clear all console lines for progress bars
-            System.out.print("\033[2J"); // Clear screen
-            System.out.print("\033[H");  // Move cursor to top-left
+            // Clear all console lines for progress bars.
+            System.out.print("\033[2J"); // Clear screen.
+            System.out.print("\033[H");  // Move cursor to top-left.
             System.out.flush();
-            // Split allGroups into individual pieces and multithread the searches, then concatenate individual CSVs into one large CSV
+
+            /*
+            * Split groupsToSearch between the worker threads, run the searches,
+            * and concatenate the individual CSV results into one global CSV.
+            */
             long globalStartTime = System.nanoTime();
-            int threadCount = 8;
             Thread[] threads = new Thread[threadCount];
             StringBuilder[] csvBuilders = new StringBuilder[threadCount];
             for(int t = 0; t < threadCount; t++){

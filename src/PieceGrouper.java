@@ -4,6 +4,7 @@
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Random;
 
 public class PieceGrouper {
 
@@ -14,6 +15,16 @@ public class PieceGrouper {
         public EntangledGroupPair(long[] groupA, long[] groupB) {
             this.groupA = groupA;
             this.groupB = groupB;
+        }
+    }
+
+    private static final class PreparedPiecePool {
+        final long[] pieces;
+        final long[][] transformedPieces;
+
+        PreparedPiecePool(long[] pieces, long[][] transformedPieces) {
+            this.pieces = pieces;
+            this.transformedPieces = transformedPieces;
         }
     }
 
@@ -194,6 +205,181 @@ public class PieceGrouper {
         return generateEntangledPairs(piecePool, groupSize, width, width, areaMin, areaMax, monominoLimit, 0, removeSymmetries);
     }
 
+    /**
+     * Generates a fixed-size random sample of valid entangled group pairs without
+     * first enumerating every valid group or every possible pairing.
+     *
+     * Each single-board group is sampled uniformly from the combinations-with-
+     * replacement implied by generateGroups(). The B group is then randomly
+     * permuted to choose the piece-to-piece entanglement mapping. Returned pairs
+     * are unique; when removeSymmetries is true, transformed and A/B-swapped
+     * equivalents are also rejected.
+     */
+    public ArrayList<EntangledGroupPair> generateRandomEntangledPairs(
+        String[] piecePool,
+        int groupSize,
+        int width,
+        int height,
+        int areaMin,
+        int areaMax,
+        int monominoLimit,
+        int mustHavePieceOfSize,
+        boolean removeSymmetries,
+        int requestedPairCount,
+        long randomSeed
+    ) {
+        return generateRandomEntangledPairs(
+            piecePool,
+            groupSize,
+            width,
+            height,
+            areaMin,
+            areaMax,
+            monominoLimit,
+            mustHavePieceOfSize,
+            removeSymmetries,
+            requestedPairCount,
+            randomSeed,
+            defaultRandomAttemptLimit(requestedPairCount)
+        );
+    }
+
+    public ArrayList<EntangledGroupPair> generateRandomEntangledPairs(
+        String[] piecePool,
+        int groupSize,
+        int width,
+        int height,
+        int areaMin,
+        int areaMax,
+        int monominoLimit,
+        int mustHavePieceOfSize,
+        boolean removeSymmetries,
+        int requestedPairCount,
+        long randomSeed,
+        long maxAttempts
+    ) {
+        validateRandomGenerationArguments(groupSize, requestedPairCount, maxAttempts);
+
+        long startTime = System.nanoTime();
+
+        // Enumerating the valid single-board groups is comparatively cheap and
+        // avoids squaring the rejection probability by independently drawing two
+        // unconstrained raw groups on every attempt.
+        ArrayList<long[]> baseGroups = generateGroups(
+            piecePool,
+            groupSize,
+            width,
+            height,
+            areaMin,
+            areaMax,
+            monominoLimit,
+            false
+        );
+
+        if (baseGroups.size() < 2 && requestedPairCount > 0) {
+            throw new IllegalStateException(
+                "At least two distinct valid groups are required to generate entangled pairs."
+            );
+        }
+
+        Random random = new Random(randomSeed);
+        ArrayList<EntangledGroupPair> pairs = new ArrayList<>(requestedPairCount);
+        HashSet<String> seenPairs = new HashSet<>(hashSetCapacityFor(requestedPairCount));
+
+        long attempts = 0L;
+        long requiredPieceRejections = 0L;
+        long duplicateRejections = 0L;
+
+        while (pairs.size() < requestedPairCount && attempts < maxAttempts) {
+            attempts++;
+
+            int firstIndex = random.nextInt(baseGroups.size());
+            int secondIndex = random.nextInt(baseGroups.size() - 1);
+            if (secondIndex >= firstIndex) {
+                secondIndex++;
+            }
+
+            // Mirror generateEntangledPairs(), which uses first < second and then
+            // permutes only group B to define the piece-to-piece correspondence.
+            if (firstIndex > secondIndex) {
+                int swap = firstIndex;
+                firstIndex = secondIndex;
+                secondIndex = swap;
+            }
+
+            long[] groupA = baseGroups.get(firstIndex);
+            long[] groupB = baseGroups.get(secondIndex);
+
+            if (mustHavePieceOfSize > 0
+                && !groupHasPieceOfSize(groupA, mustHavePieceOfSize)
+                && !groupHasPieceOfSize(groupB, mustHavePieceOfSize)) {
+                requiredPieceRejections++;
+                continue;
+            }
+
+            long[] candidateGroupB = groupB.clone();
+            shuffleInPlace(candidateGroupB, random);
+
+            String pairKey = removeSymmetries
+                ? canonicalEntangledPairHash(groupA, candidateGroupB, width)
+                : orderedEntangledPairHash(groupA, candidateGroupB);
+
+            if (!seenPairs.add(pairKey)) {
+                duplicateRejections++;
+                continue;
+            }
+
+            pairs.add(new EntangledGroupPair(groupA.clone(), candidateGroupB));
+        }
+
+        if (pairs.size() < requestedPairCount) {
+            throw new IllegalStateException(
+                "Requested " + requestedPairCount + " unique random entangled pairs, "
+                    + "but found only " + pairs.size() + " after " + attempts + " attempts. "
+                    + "Increase maxAttempts, relax the constraints, or request fewer pairs."
+            );
+        }
+
+        long endTime = System.nanoTime();
+        System.out.println("Valid base groups available: " + baseGroups.size());
+        System.out.println("Random entangled pairs generated: " + pairs.size());
+        System.out.println("Random seed: " + randomSeed);
+        System.out.println("Random pair-sampling attempts: " + attempts);
+        System.out.println("Required-piece rejections: " + requiredPieceRejections);
+        System.out.println("Duplicate/symmetry rejections: " + duplicateRejections);
+        System.out.println(
+            "Random entangled pair generation time: "
+                + (endTime - startTime) / 1000000.0 + " ms"
+        );
+        return pairs;
+    }
+
+    public ArrayList<EntangledGroupPair> generateRandomEntangledPairs(
+        String[] piecePool,
+        int groupSize,
+        int width,
+        int areaMin,
+        int areaMax,
+        int monominoLimit,
+        boolean removeSymmetries,
+        int requestedPairCount,
+        long randomSeed
+    ) {
+        return generateRandomEntangledPairs(
+            piecePool,
+            groupSize,
+            width,
+            width,
+            areaMin,
+            areaMax,
+            monominoLimit,
+            0,
+            removeSymmetries,
+            requestedPairCount,
+            randomSeed
+        );
+    }
+
     private boolean groupHasPieceOfSize(long[] group, int mustHavePieceOfSize) {
         if (mustHavePieceOfSize <= 0) {
             return true;
@@ -211,6 +397,142 @@ public class PieceGrouper {
 
     public ArrayList<long[]> generateGroups(String[] piecePool, int groupSize, int width, int areaMin, int areaMax, int monominoLimit, boolean removeSymmetries){
         return generateGroups(piecePool, groupSize, width, Integer.MAX_VALUE, areaMin, areaMax, monominoLimit, removeSymmetries);
+    }
+
+    /**
+     * Generates a fixed number of unique random groups while applying the same
+     * board-dimension, area, monomino, duplicate, and optional symmetry rules as
+     * generateGroups(). This avoids exhaustive enumeration when only a sample is
+     * needed.
+     */
+    public ArrayList<long[]> generateRandomGroups(
+        String[] piecePool,
+        int groupSize,
+        int width,
+        int height,
+        int areaMin,
+        int areaMax,
+        int monominoLimit,
+        boolean removeSymmetries,
+        int requestedGroupCount,
+        long randomSeed
+    ) {
+        return generateRandomGroups(
+            piecePool,
+            groupSize,
+            width,
+            height,
+            areaMin,
+            areaMax,
+            monominoLimit,
+            removeSymmetries,
+            requestedGroupCount,
+            randomSeed,
+            defaultRandomAttemptLimit(requestedGroupCount)
+        );
+    }
+
+    public ArrayList<long[]> generateRandomGroups(
+        String[] piecePool,
+        int groupSize,
+        int width,
+        int height,
+        int areaMin,
+        int areaMax,
+        int monominoLimit,
+        boolean removeSymmetries,
+        int requestedGroupCount,
+        long randomSeed,
+        long maxAttempts
+    ) {
+        validateRandomGenerationArguments(groupSize, requestedGroupCount, maxAttempts);
+
+        long startTime = System.nanoTime();
+        PreparedPiecePool prepared = preparePiecePool(piecePool, width, height, removeSymmetries);
+        Random random = new Random(randomSeed);
+
+        ArrayList<long[]> groups = new ArrayList<>(requestedGroupCount);
+        HashSet<String> acceptedGroupHashes = new HashSet<>(hashSetCapacityFor(requestedGroupCount));
+
+        long attempts = 0L;
+        long constraintRejections = 0L;
+        long duplicateRejections = 0L;
+        long symmetryRejections = 0L;
+
+        while (groups.size() < requestedGroupCount && attempts < maxAttempts) {
+            attempts++;
+            long[] candidate = sampleCombinationWithReplacement(prepared.pieces, groupSize, random);
+
+            if (!satisfiesGroupConstraints(candidate, areaMin, areaMax, monominoLimit)) {
+                constraintRejections++;
+                continue;
+            }
+
+            String exactHash = hash(candidate);
+            if (acceptedGroupHashes.contains(exactHash)) {
+                duplicateRejections++;
+                continue;
+            }
+
+            if (removeSymmetries
+                && containsAnySymmetries(
+                    prepared.pieces,
+                    prepared.transformedPieces,
+                    acceptedGroupHashes,
+                    candidate
+                )) {
+                symmetryRejections++;
+                continue;
+            }
+
+            groups.add(candidate);
+            acceptedGroupHashes.add(exactHash);
+        }
+
+        if (groups.size() < requestedGroupCount) {
+            throw new IllegalStateException(
+                "Requested " + requestedGroupCount + " unique random groups, "
+                    + "but found only " + groups.size() + " after " + attempts + " attempts. "
+                    + "Increase maxAttempts, relax the constraints, or request fewer groups."
+            );
+        }
+
+        long endTime = System.nanoTime();
+        System.out.println("Random groups generated: " + groups.size());
+        System.out.println("Random seed: " + randomSeed);
+        System.out.println("Random generation attempts: " + attempts);
+        System.out.println("Constraint rejections: " + constraintRejections);
+        System.out.println("Duplicate rejections: " + duplicateRejections);
+        if (removeSymmetries) {
+            System.out.println("Symmetry rejections: " + symmetryRejections);
+        }
+        System.out.println("Random group generation time: " + (endTime - startTime) / 1000000.0 + " ms");
+        return groups;
+    }
+
+    public ArrayList<long[]> generateRandomGroups(
+        String[] piecePool,
+        int groupSize,
+        int width,
+        int areaMin,
+        int areaMax,
+        int monominoLimit,
+        boolean removeSymmetries,
+        int requestedGroupCount,
+        long randomSeed
+    ) {
+        return generateRandomGroups(
+            piecePool,
+            groupSize,
+            width,
+            width,
+            areaMin,
+            areaMax,
+            monominoLimit,
+            removeSymmetries,
+            requestedGroupCount,
+            randomSeed
+        );
     }
 
     public ArrayList<long[]> generateGroups(String[] piecePool, int groupSize, int width, int height, int areaMin, int areaMax, int monominoLimit, boolean removeSymmetries){
@@ -311,6 +633,145 @@ public class PieceGrouper {
             e.printStackTrace();
         }
         return allGroups;
+    }
+
+    private PreparedPiecePool preparePiecePool(
+        String[] piecePool,
+        int width,
+        int height,
+        boolean includeTransformations
+    ) {
+        String[] filteredPiecePool = filterPiecePoolByBoardDimensions(piecePool, width, height);
+        if (filteredPiecePool.length == 0) {
+            throw new IllegalArgumentException("No pieces from the requested pool fit the board.");
+        }
+
+        long[] pieces = new long[filteredPiecePool.length];
+        long[][] transformedPieces = includeTransformations
+            ? new long[filteredPiecePool.length][8]
+            : null;
+
+        for (int index = 0; index < filteredPiecePool.length; index++) {
+            int pieceId = findPieceId(filteredPiecePool[index]);
+            if (pieceId < 0) {
+                throw new IllegalArgumentException("Unknown piece code: " + filteredPiecePool[index]);
+            }
+
+            pieces[index] = embed(pieceId, width);
+            if (includeTransformations) {
+                transformedPieces[index] = embedTransformations(pieceId, width);
+            }
+        }
+
+        return new PreparedPiecePool(pieces, transformedPieces);
+    }
+
+    private int findPieceId(String pieceCode) {
+        for (int index = 0; index < pieceName.length; index++) {
+            if (pieceName[index].equals(pieceCode)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private long[] sampleCombinationWithReplacement(
+        long[] pieces,
+        int groupSize,
+        Random random
+    ) {
+        // A size-k combination with replacement from n pieces is equivalent to
+        // choosing k distinct positions from n + k - 1 slots (stars and bars).
+        // Sampling those positions uniformly therefore samples each piece multiset
+        // uniformly, unlike independently drawing k pieces and sorting them.
+        int slotCount = pieces.length + groupSize - 1;
+        HashSet<Integer> selectedPositions = new HashSet<>(hashSetCapacityFor(groupSize));
+        while (selectedPositions.size() < groupSize) {
+            selectedPositions.add(random.nextInt(slotCount));
+        }
+
+        int[] sortedPositions = new int[groupSize];
+        int positionIndex = 0;
+        for (int selectedPosition : selectedPositions) {
+            sortedPositions[positionIndex++] = selectedPosition;
+        }
+        Arrays.sort(sortedPositions);
+
+        long[] group = new long[groupSize];
+        for (int index = 0; index < groupSize; index++) {
+            int pieceIndex = sortedPositions[index] - index;
+            // Match recursiveGroup's canonical descending library order.
+            group[groupSize - 1 - index] = pieces[pieceIndex];
+        }
+        return group;
+    }
+
+    private boolean satisfiesGroupConstraints(
+        long[] group,
+        int areaMin,
+        int areaMax,
+        int monominoLimit
+    ) {
+        int area = 0;
+        int monominoCount = 0;
+        for (long piece : group) {
+            int pieceArea = Long.bitCount(piece);
+            area += pieceArea;
+            if (pieceArea == 1) {
+                monominoCount++;
+            }
+        }
+
+        return area >= areaMin
+            && area <= areaMax
+            && monominoCount <= monominoLimit;
+    }
+
+    private void shuffleInPlace(long[] values, Random random) {
+        for (int index = values.length - 1; index > 0; index--) {
+            int swapIndex = random.nextInt(index + 1);
+            long swap = values[index];
+            values[index] = values[swapIndex];
+            values[swapIndex] = swap;
+        }
+    }
+
+    private void validateRandomGenerationArguments(
+        int groupSize,
+        int requestedCount,
+        long maxAttempts
+    ) {
+        if (groupSize <= 0) {
+            throw new IllegalArgumentException("groupSize must be positive.");
+        }
+        if (requestedCount < 0) {
+            throw new IllegalArgumentException("requestedCount cannot be negative.");
+        }
+        if (maxAttempts < requestedCount) {
+            throw new IllegalArgumentException("maxAttempts must be at least requestedCount.");
+        }
+    }
+
+    private long defaultRandomAttemptLimit(int requestedCount) {
+        if (requestedCount == 0) {
+            return 0L;
+        }
+
+        long scaled;
+        try {
+            scaled = Math.multiplyExact((long) requestedCount, 1000L);
+        } catch (ArithmeticException overflow) {
+            scaled = Long.MAX_VALUE;
+        }
+        return Math.max(100000L, scaled);
+    }
+
+    private int hashSetCapacityFor(int expectedEntries) {
+        if (expectedEntries <= 0) {
+            return 16;
+        }
+        long capacity = (long) Math.ceil(expectedEntries / 0.75);
+        return (int) Math.min(capacity + 1L, 1L << 30);
     }
 
     private String[] filterPiecePoolByBoardDimensions(String[] piecePool, int width, int height) {
