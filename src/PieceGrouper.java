@@ -69,6 +69,8 @@ public class PieceGrouper {
         HashSet<String> seenPairs = new HashSet<>();
         int ignoredSymmetries = 0;
 
+        // determine number of trials for a rough progress bar
+        int totalTrials = baseGroups.size() * (baseGroups.size() - 1) / 2;
         for (int first = 0; first < baseGroups.size(); first++) {
             boolean firstHasRequiredPiece = groupHasPieceOfSize(baseGroups.get(first), mustHavePieceOfSize);
             for (int second = first + 1; second < baseGroups.size(); second++) {
@@ -84,6 +86,12 @@ public class PieceGrouper {
                 int[] ignoredSymmetriesHolder = new int[]{ignoredSymmetries};
                 appendEntangledPairings(groupA, groupB, width, removeSymmetries, seenPairs, allPairs, ignoredSymmetriesHolder);
                 ignoredSymmetries = ignoredSymmetriesHolder[0];
+
+                // Carriage style progress printout, plus a rough estimate of time remaining
+                int numProcessed = first * baseGroups.size() + second;
+                double progress = (double) numProcessed / totalTrials;
+                System.out.print("\rProgress: " + numProcessed + "/" + totalTrials + " pairs processed. (" + String.format("%.2f", progress * 100) + "%)");
+                System.out.print(" | Estimated time remaining: " + String.format("%.2f", (System.nanoTime() - startTime) / 1e9 / progress * (1 - progress)) + " seconds");
             }
         }
 
@@ -262,9 +270,35 @@ public class PieceGrouper {
             // }
         }
 
+        int[] minPieceAreaFromIndex = new int[numPieces];
+        int[] maxPieceAreaFromIndex = new int[numPieces];
+        int minArea = Integer.MAX_VALUE;
+        int maxArea = 0;
+        for (int i = numPieces - 1; i >= 0; i--) {
+            int pieceArea = Long.bitCount(pieces[i]);
+            minArea = Math.min(minArea, pieceArea);
+            maxArea = Math.max(maxArea, pieceArea);
+            minPieceAreaFromIndex[i] = minArea;
+            maxPieceAreaFromIndex[i] = maxArea;
+        }
+
         ArrayList<long[]> allGroups = new ArrayList<>();
         HashSet<String> allGroupsSet = new HashSet<>(); // for quick lookup
-        recursiveGroup(pieces, transformedPieces, groupSize, 0, new long[groupSize], allGroups, allGroupsSet, areaMin, areaMax, monominoLimit, removeSymmetries);
+        recursiveGroup(
+            pieces,
+            transformedPieces,
+            minPieceAreaFromIndex,
+            maxPieceAreaFromIndex,
+            groupSize,
+            0,
+            new long[groupSize],
+            allGroups,
+            allGroupsSet,
+            areaMin,
+            areaMax,
+            monominoLimit,
+            removeSymmetries
+        );
         long endTime = System.nanoTime();
         System.out.println("Total unique groups: " + count);
         System.out.println("Symmetries ignored: " + (countIgnoreSymmetries - count));
@@ -307,7 +341,21 @@ public class PieceGrouper {
         return filtered.toArray(new String[0]);
     }
 
-    private void recursiveGroup(long[] pieces, long[][] transformedPieces, int groupSize, int startingOffset, long[] groupInProgress, ArrayList<long[]> allGroups, HashSet<String> allGroupsSet, int areaMin, int areaMax, int monominoLimit, boolean removeSymmetries){
+    private void recursiveGroup(
+        long[] pieces,
+        long[][] transformedPieces,
+        int[] minPieceAreaFromIndex,
+        int[] maxPieceAreaFromIndex,
+        int groupSize,
+        int startingOffset,
+        long[] groupInProgress,
+        ArrayList<long[]> allGroups,
+        HashSet<String> allGroupsSet,
+        int areaMin,
+        int areaMax,
+        int monominoLimit,
+        boolean removeSymmetries
+    ){
         // Note: Initially I passed in numPieces as well as pieces,
         // believing it would be faster. However, the code is blazingly fast anyway
         // (16-20ms for 24310 groups of 8 from 10 pieces with or without this change)
@@ -366,11 +414,16 @@ public class PieceGrouper {
                     currentArea += Long.bitCount(piece);
                     if(Long.bitCount(piece) == 1) monominoCount++;
                 }
-                if(currentArea + groupSize > areaMax){
-                    return; // prune search
+                if (startingOffset >= numPieces) {
+                    return;
                 }
-                if(currentArea + groupSize * 5 < areaMin){ // Magic number of 5 for now, since I'm only considering 1-5ominoes
-                    return; // prune search
+                int minRemainingPieceArea = minPieceAreaFromIndex[startingOffset];
+                int maxRemainingPieceArea = maxPieceAreaFromIndex[startingOffset];
+                if(currentArea + groupSize * minRemainingPieceArea > areaMax){
+                    return; // even the smallest remaining pieces would exceed areaMax
+                }
+                if(currentArea + groupSize * maxRemainingPieceArea < areaMin){
+                    return; // even the largest remaining pieces cannot reach areaMin
                 }
                 if(monominoCount > monominoLimit){
                     return; // prune search
@@ -378,7 +431,21 @@ public class PieceGrouper {
             // #endregion OPTIMIZATION
             for(int i = startingOffset; i < numPieces; i++){
                 long[] groupInProgressCopy = test(groupInProgress, pieces[i], groupSize - 1);
-                recursiveGroup(pieces, transformedPieces, groupSize - 1, i, groupInProgressCopy, allGroups, allGroupsSet, areaMin, areaMax, monominoLimit, removeSymmetries);
+                recursiveGroup(
+                    pieces,
+                    transformedPieces,
+                    minPieceAreaFromIndex,
+                    maxPieceAreaFromIndex,
+                    groupSize - 1,
+                    i,
+                    groupInProgressCopy,
+                    allGroups,
+                    allGroupsSet,
+                    areaMin,
+                    areaMax,
+                    monominoLimit,
+                    removeSymmetries
+                );
             }
         }
     }

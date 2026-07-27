@@ -700,8 +700,15 @@ public class EntangledGroupSearcher {
         int[] maxCol = new int[pieceCount];
 
         for (int piece = 0; piece < pieceCount; piece++) {
+            for (int coord = 0; coord < cellCount; coord++) {
+                for (int direction = 0; direction < 4; direction++) {
+                    pieceStepNeighbors[piece][coord][direction] = -1;
+                }
+            }
 
-            // If piece is 0, treat it as a "hollow" monomino, i.e. all coordinates are valid but all bitboards are 0L
+            // A blank is virtual: it occupies no cells and has one canonical coordinate.
+            // Its paired real piece moves independently; the blank coordinate never needs
+            // to become part of the packed state space.
             if (sourcePieces[piece] == 0L) {
                 minRow[piece] = 0;
                 minCol[piece] = 0;
@@ -745,11 +752,6 @@ public class EntangledGroupSearcher {
             }
             pieceValidCoords[piece] = validCoords;
 
-            for (int coord = 0; coord < cellCount; coord++) {
-                for (int direction = 0; direction < 4; direction++) {
-                    pieceStepNeighbors[piece][coord][direction] = -1;
-                }
-            }
             for (int index = 0; index < validCoords.length; index++) {
                 int coord = validCoords[index];
                 int row = coord / width;
@@ -956,6 +958,11 @@ public class EntangledGroupSearcher {
             int startCoordB = getCoord(packedStateB, piece);
             long currentPieceBitboardA = boardA.pieceMoveBitboards[piece][startCoordA];
             long currentPieceBitboardB = boardB.pieceMoveBitboards[piece][startCoordB];
+            boolean blankA = boardA.pieces[piece] == 0L;
+            boolean blankB = boardB.pieces[piece] == 0L;
+            if (blankA && blankB) {
+                continue;
+            }
             long blockersA = occupiedA ^ currentPieceBitboardA;
             long blockersB = occupiedB ^ currentPieceBitboardB;
 
@@ -973,12 +980,13 @@ public class EntangledGroupSearcher {
                 queueHead++;
 
                 for (int direction = 0; direction < 4; direction++) {
-                    int nextCoordA = boardA.pieceStepNeighbors[piece][coordA][direction];
-                    int nextCoordB = boardB.pieceStepNeighbors[piece][coordB][direction];
-                    if (nextCoordA == -1 || nextCoordB == -1) {
+                    int nextCoordA = blankA ? coordA : boardA.pieceStepNeighbors[piece][coordA][direction];
+                    int nextCoordB = blankB ? coordB : boardB.pieceStepNeighbors[piece][coordB][direction];
+                    if ((!blankA && nextCoordA == -1) || (!blankB && nextCoordB == -1)) {
                         continue;
                     }
-                    if (!preservesRelativeOffset(coordA, coordB, nextCoordA, nextCoordB)) {
+                    if (!blankA && !blankB
+                        && !preservesRelativeOffset(coordA, coordB, nextCoordA, nextCoordB)) {
                         continue;
                     }
 
@@ -1061,6 +1069,9 @@ public class EntangledGroupSearcher {
         for (int piece = 0; piece < pieceCount; piece++) {
             long pieceBitboardA = boardA.pieceMoveBitboards[piece][getCoord(packedStateA, piece)];
             long pieceBitboardB = boardB.pieceMoveBitboards[piece][getCoord(packedStateB, piece)];
+            if (pieceBitboardA == 0L || pieceBitboardB == 0L) {
+                continue;
+            }
             if ((pieceBitboardA & pieceBitboardB) == 0L) {
                 return false;
             }

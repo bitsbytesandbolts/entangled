@@ -252,6 +252,11 @@ public class EntangledSolutionEvaluator {
             int startCoordB = getCoord(state.stateB, piece);
             long currentPieceBitboardA = boardA.pieceMoveBitboards[piece][startCoordA];
             long currentPieceBitboardB = boardB.pieceMoveBitboards[piece][startCoordB];
+            boolean blankA = boardA.normalizedPieceShapes[piece] == 0L;
+            boolean blankB = boardB.normalizedPieceShapes[piece] == 0L;
+            if (blankA && blankB) {
+                continue;
+            }
             long blockersA = occupiedA ^ currentPieceBitboardA;
             long blockersB = occupiedB ^ currentPieceBitboardB;
 
@@ -269,12 +274,13 @@ public class EntangledSolutionEvaluator {
                 queueHead++;
 
                 for (int direction = 0; direction < 4; direction++) {
-                    int nextCoordA = boardA.pieceStepNeighbors[piece][coordA][direction];
-                    int nextCoordB = boardB.pieceStepNeighbors[piece][coordB][direction];
-                    if (nextCoordA == -1 || nextCoordB == -1) {
+                    int nextCoordA = blankA ? coordA : boardA.pieceStepNeighbors[piece][coordA][direction];
+                    int nextCoordB = blankB ? coordB : boardB.pieceStepNeighbors[piece][coordB][direction];
+                    if ((!blankA && nextCoordA == -1) || (!blankB && nextCoordB == -1)) {
                         continue;
                     }
-                    if (!preservesRelativeOffset(coordA, coordB, nextCoordA, nextCoordB)) {
+                    if (!blankA && !blankB
+                        && !preservesRelativeOffset(coordA, coordB, nextCoordA, nextCoordB)) {
                         continue;
                     }
 
@@ -410,13 +416,20 @@ public class EntangledSolutionEvaluator {
         long initialState = 0L;
 
         for (int piece = 0; piece < pieceCount; piece++) {
-            int currentPieceWidth = maxCol[piece] - minCol[piece] + 1;
-            int currentPieceHeight = maxRow[piece] - minRow[piece] + 1;
-            normalizedPieceShapes[piece] = puzzle[piece] >> (width * minRow[piece] + minCol[piece]);
-
             for (int coord = 0; coord < cellCount; coord++) {
                 Arrays.fill(pieceStepNeighbors[piece][coord], -1);
             }
+
+            if (puzzle[piece] == 0L) {
+                normalizedPieceShapes[piece] = 0L;
+                pieceMoveBitboards[piece][0] = 0L;
+                initialState = rewriteCoord(initialState, piece, 0);
+                continue;
+            }
+
+            int currentPieceWidth = maxCol[piece] - minCol[piece] + 1;
+            int currentPieceHeight = maxRow[piece] - minRow[piece] + 1;
+            normalizedPieceShapes[piece] = puzzle[piece] >> (width * minRow[piece] + minCol[piece]);
 
             for (int row = 0; row < height + 1 - currentPieceHeight; row++) {
                 for (int col = 0; col < width + 1 - currentPieceWidth; col++) {

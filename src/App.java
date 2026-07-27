@@ -60,9 +60,9 @@ public class App {
 
         //     // Load CSV
         //     String filepath = "interesting_groups_found_so_far.csv";
-        //     int diameterThreshold = 20;
-        //     int simplePuzzleThreshold = 10;
-        //     int pieceCount = 3;
+        //     int diameterThreshold = 60;
+        //     int simplePuzzleThreshold = 20;
+        //     int pieceCount = 6;
 
         //     ArrayList<int[][]> puzzleGridsA = new ArrayList<>();
         //     ArrayList<int[][]> puzzleGridsB = new ArrayList<>();
@@ -122,7 +122,7 @@ public class App {
         // #region MAIN SEARCH -- the meat of the potato
 
             // Create groups of pieces
-            int groupSize = 7; // Number of pieces per puzzle
+            int groupSize = 5; // Number of pieces per puzzle
             PieceGrouper grouper = new PieceGrouper();
 
             int puzzleWidth = 4;
@@ -139,11 +139,11 @@ public class App {
             ArrayList<PieceGrouper.EntangledGroupPair> allGroups = grouper.generateEntangledPairs(new String[]{
                 "0",
                 "1", "2I", "2I90", "3I", "3I90", "3L", "3L90", "3L180", "3L270", 
-                // "4O", "4I", "4I90", 
-                // "4L", "4L90", "4L180", "4L270", 
-                // "4J", "4J90", "4J180", "4J270",
-                // "4T", "4T90", "4T180", "4T270",
-                // "4S", "4S90", "4Z", "4Z90",
+                "4O", "4I", "4I90", 
+                "4L", "4L90", "4L180", "4L270", 
+                "4J", "4J90", "4J180", "4J270",
+                "4T", "4T90", "4T180", "4T270",
+                "4S", "4S90", "4Z", "4Z90",
                 // "5F", "5F90", "5F180", "5F270",
                 // "5f", "5f90", "5f180", "5f270",
                 // "5I", "5I90",
@@ -171,8 +171,8 @@ public class App {
             StringBuilder csvBuilderGlobal = new StringBuilder();
             csvBuilderGlobal.append("GroupID,PiecesA,PiecesB,Packings,Islands,MaxEstimatedDiameter,StartStateA,StartStateB,EndStateA,EndStateB,TimeTaken(ms)\n");
 
-            boolean sampleOnly = false;
-            int sampleSizePerThread = 5000;
+            boolean sampleOnly = true;
+            int sampleSizePerThread = 10000;
             int csvRowCheckpoint = 1000; // print progress every N rows
 
             int packingsLowerLimit = 50; // Exclude puzzles with fewer than this many packings
