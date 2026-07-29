@@ -59,6 +59,7 @@ public class PieceGrouper {
         int areaMax,
         int monominoLimit,
         int mustHavePieceOfSize,
+        boolean bothPuzzlesMustHaveBlank,
         boolean removeSymmetries
     ) {
         long startTime = System.nanoTime();
@@ -76,15 +77,43 @@ public class PieceGrouper {
             false
         );
 
+        int baseGroupCountBeforeBlankFilter = baseGroups.size();
+
+        if (bothPuzzlesMustHaveBlank) {
+            baseGroups.removeIf(group -> !containsBlank(group));
+
+            System.out.println(
+                "Blank requirement enabled: kept "
+                    + baseGroups.size()
+                    + " of "
+                    + baseGroupCountBeforeBlankFilter
+                    + " valid base groups."
+            );
+        }
+
+        if (baseGroups.size() < 2) {
+            String groupDescription = bothPuzzlesMustHaveBlank
+                ? "valid groups containing at least one blank"
+                : "valid groups";
+
+            throw new IllegalStateException(
+                "At least two distinct "
+                    + groupDescription
+                    + " are required to generate entangled pairs."
+            );
+        }
+
         ArrayList<EntangledGroupPair> allPairs = new ArrayList<>();
         HashSet<String> seenPairs = new HashSet<>();
         int ignoredSymmetries = 0;
 
         // determine number of trials for a rough progress bar
         int totalTrials = baseGroups.size() * (baseGroups.size() - 1) / 2;
+        int numProcessed = 0;
         for (int first = 0; first < baseGroups.size(); first++) {
             boolean firstHasRequiredPiece = groupHasPieceOfSize(baseGroups.get(first), mustHavePieceOfSize);
             for (int second = first + 1; second < baseGroups.size(); second++) {
+                numProcessed++;
                 long[] groupA = baseGroups.get(first);
                 long[] groupB = baseGroups.get(second);
 
@@ -99,7 +128,6 @@ public class PieceGrouper {
                 ignoredSymmetries = ignoredSymmetriesHolder[0];
 
                 // Carriage style progress printout, plus a rough estimate of time remaining
-                int numProcessed = first * baseGroups.size() + second;
                 double progress = (double) numProcessed / totalTrials;
                 System.out.print("\rProgress: " + numProcessed + "/" + totalTrials + " pairs processed. (" + String.format("%.2f", progress * 100) + "%)");
                 System.out.print(" | Estimated time remaining: " + String.format("%.2f", (System.nanoTime() - startTime) / 1e9 / progress * (1 - progress)) + " seconds");
@@ -152,6 +180,12 @@ public class PieceGrouper {
     ) {
         if (depth == sourceGroupB.length) {
             long[] candidateGroupB = permutation.clone();
+
+            // A 0/0 pairing represents no physical piece on either puzzle,
+            // effectively reducing the requested piece count by one.
+            if (hasAlignedBlanks(groupA, candidateGroupB)) {
+                return;
+            }
             if (removeSymmetries) {
                 String canonicalHash = canonicalEntangledPairHash(groupA, candidateGroupB, width);
                 if (!seenPairs.add(canonicalHash)) {
@@ -202,18 +236,25 @@ public class PieceGrouper {
         int monominoLimit,
         boolean removeSymmetries
     ) {
-        return generateEntangledPairs(piecePool, groupSize, width, width, areaMin, areaMax, monominoLimit, 0, removeSymmetries);
+        return generateEntangledPairs(piecePool, groupSize, width, width, areaMin, areaMax, monominoLimit, 0, false, removeSymmetries);
     }
 
     /**
-     * Generates a fixed-size random sample of valid entangled group pairs without
-     * first enumerating every valid group or every possible pairing.
+     * Generates a fixed-size random sample of valid entangled group pairs.
      *
-     * Each single-board group is sampled uniformly from the combinations-with-
-     * replacement implied by generateGroups(). The B group is then randomly
-     * permuted to choose the piece-to-piece entanglement mapping. Returned pairs
-     * are unique; when removeSymmetries is true, transformed and A/B-swapped
-     * equivalents are also rejected.
+     * The valid single-board groups are enumerated first because that set is
+     * comparatively small. Two distinct base groups are then selected randomly,
+     * and group B is randomly permuted to determine the piece-to-piece
+     * correspondence.
+     *
+     * This avoids enumerating and retaining the much larger set of all possible
+     * entangled pairings.
+     *
+     * When bothPuzzlesMustHaveBlank is true, both selected base groups must contain
+     * at least one blank piece.
+     *
+     * Returned pairs are unique. When removeSymmetries is true, transformed and
+     * A/B-swapped equivalents are also rejected.
      */
     public ArrayList<EntangledGroupPair> generateRandomEntangledPairs(
         String[] piecePool,
@@ -224,6 +265,7 @@ public class PieceGrouper {
         int areaMax,
         int monominoLimit,
         int mustHavePieceOfSize,
+        boolean bothPuzzlesMustHaveBlank,
         boolean removeSymmetries,
         int requestedPairCount,
         long randomSeed
@@ -237,6 +279,7 @@ public class PieceGrouper {
             areaMax,
             monominoLimit,
             mustHavePieceOfSize,
+            bothPuzzlesMustHaveBlank,
             removeSymmetries,
             requestedPairCount,
             randomSeed,
@@ -253,6 +296,7 @@ public class PieceGrouper {
         int areaMax,
         int monominoLimit,
         int mustHavePieceOfSize,
+        boolean bothPuzzlesMustHaveBlank,
         boolean removeSymmetries,
         int requestedPairCount,
         long randomSeed,
@@ -276,9 +320,36 @@ public class PieceGrouper {
             false
         );
 
+        int baseGroupCountBeforeBlankFilter = baseGroups.size();
+
+        /*
+        * When enabled, both puzzle A and puzzle B must contain at least
+        * one blank piece.
+        *
+        * Both groups are later selected from baseGroups, so filtering this
+        * list guarantees that both selected puzzles contain a blank.
+        */
+        if (bothPuzzlesMustHaveBlank) {
+            baseGroups.removeIf(group -> !containsBlank(group));
+
+            System.out.println(
+                "Blank requirement enabled: kept "
+                    + baseGroups.size()
+                    + " of "
+                    + baseGroupCountBeforeBlankFilter
+                    + " valid base groups."
+            );
+        }
+
         if (baseGroups.size() < 2 && requestedPairCount > 0) {
+            String groupDescription = bothPuzzlesMustHaveBlank
+                ? "valid groups containing at least one blank"
+                : "valid groups";
+
             throw new IllegalStateException(
-                "At least two distinct valid groups are required to generate entangled pairs."
+                "At least two distinct "
+                    + groupDescription
+                    + " are required to generate entangled pairs."
             );
         }
 
@@ -288,6 +359,7 @@ public class PieceGrouper {
 
         long attempts = 0L;
         long requiredPieceRejections = 0L;
+        long alignedBlankRejections = 0L;
         long duplicateRejections = 0L;
 
         while (pairs.size() < requestedPairCount && attempts < maxAttempts) {
@@ -320,6 +392,12 @@ public class PieceGrouper {
             long[] candidateGroupB = groupB.clone();
             shuffleInPlace(candidateGroupB, random);
 
+            // Reject any completed mapping containing a blank paired with a blank.
+            if (hasAlignedBlanks(groupA, candidateGroupB)) {
+                alignedBlankRejections++;
+                continue;
+            }
+
             String pairKey = removeSymmetries
                 ? canonicalEntangledPairHash(groupA, candidateGroupB, width)
                 : orderedEntangledPairHash(groupA, candidateGroupB);
@@ -346,6 +424,7 @@ public class PieceGrouper {
         System.out.println("Random seed: " + randomSeed);
         System.out.println("Random pair-sampling attempts: " + attempts);
         System.out.println("Required-piece rejections: " + requiredPieceRejections);
+        System.out.println("Aligned-blank rejections: " + alignedBlankRejections);
         System.out.println("Duplicate/symmetry rejections: " + duplicateRejections);
         System.out.println(
             "Random entangled pair generation time: "
@@ -374,6 +453,7 @@ public class PieceGrouper {
             areaMax,
             monominoLimit,
             0,
+            false, // bothPuzzlesMustHaveBlank
             removeSymmetries,
             requestedPairCount,
             randomSeed
@@ -387,6 +467,35 @@ public class PieceGrouper {
 
         for (long piece : group) {
             if (Long.bitCount(piece) >= mustHavePieceOfSize) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean containsBlank(long[] group) {
+        int count = 0;
+        for (long piece : group) {
+            if (piece == 0L) {
+                count++;
+            }
+        }
+
+        if (count == 2) // strict one blank, just testing this out for aesthetic puzzles
+            return true;
+        return false;
+    }
+
+    private boolean hasAlignedBlanks(long[] groupA, long[] groupB) {
+        if (groupA.length != groupB.length) {
+            throw new IllegalArgumentException(
+                "Entangled groups must have the same number of pieces."
+            );
+        }
+
+        for (int piece = 0; piece < groupA.length; piece++) {
+            if (groupA[piece] == 0L && groupB[piece] == 0L) {
                 return true;
             }
         }
@@ -955,10 +1064,47 @@ public class PieceGrouper {
     }
 
     private String orderedEntangledPairHash(long[] groupA, long[] groupB) {
-        StringBuilder sb = new StringBuilder();
-        for (int index = 0; index < groupA.length; index++) {
-            sb.append(groupA[index]).append(':').append(groupB[index]).append(';');
+        if (groupA.length != groupB.length) {
+            throw new IllegalArgumentException(
+                "Entangled groups must have the same number of pieces."
+            );
         }
+
+        /*
+        * Keep each A/B correspondence together, but sort the paired
+        * correspondences so that simultaneous piece relabeling does not
+        * create a separate group.
+        */
+        long[][] pairedPieces = new long[groupA.length][2];
+
+        for (int index = 0; index < groupA.length; index++) {
+            pairedPieces[index][0] = groupA[index];
+            pairedPieces[index][1] = groupB[index];
+        }
+
+        Arrays.sort(
+            pairedPieces,
+            (first, second) -> {
+                int comparison =
+                    Long.compareUnsigned(first[0], second[0]);
+
+                if (comparison != 0) {
+                    return comparison;
+                }
+
+                return Long.compareUnsigned(first[1], second[1]);
+            }
+        );
+
+        StringBuilder sb = new StringBuilder();
+
+        for (long[] pairedPiece : pairedPieces) {
+            sb.append(pairedPiece[0])
+            .append(':')
+            .append(pairedPiece[1])
+            .append(';');
+        }
+
         return sb.toString();
     }
 

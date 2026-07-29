@@ -59,9 +59,10 @@ public class App {
         // // #region SIMPLE SEARCHER -- uncomment to find longest simple puzzles in a CSV file
 
         //     // Load CSV
+        //     //String filepath = "group_search_results.csv";
         //     String filepath = "interesting_groups_found_so_far.csv";
-        //     int diameterThreshold = 60;
-        //     int simplePuzzleThreshold = 20;
+        //     int diameterThreshold = 87;
+        //     int simplePuzzleThreshold = 50;
         //     int pieceCount = 6;
 
         //     ArrayList<int[][]> puzzleGridsA = new ArrayList<>();
@@ -122,7 +123,7 @@ public class App {
         // #region MAIN SEARCH -- the meat of the potato
 
             // Create groups of pieces
-            int groupSize = 5; // Number of pieces per puzzle
+            int groupSize = 6; // Number of pieces per puzzle
             PieceGrouper grouper = new PieceGrouper();
 
             int puzzleWidth = 4;
@@ -141,7 +142,7 @@ public class App {
 
             // Trying this heuristic to cut down the search space based on
             // good puzzles found so far.
-            int areaMin = 7;
+            int areaMin = 8;
             int areaMax = 10;
             int monominoLimit = 1;
 
@@ -149,19 +150,21 @@ public class App {
             // Set to 0 to ignore.
             int mustHavePieceOfSize = 0;
 
+            boolean bothPuzzlesMustHaveBlank = true; // If true, both puzzles must have at least one blank piece (just start the group with 0)
+
             String[] piecePool = new String[]{
                 "0",
                 "1",
                 "2I", "2I90",
                 "3I", "3I90",
                 "3L", "3L90", "3L180", "3L270",
-                "4O",
-                "4I", "4I90",
-                "4L", "4L90", "4L180", "4L270",
-                "4J", "4J90", "4J180", "4J270",
-                "4T", "4T90", "4T180", "4T270",
-                "4S", "4S90",
-                "4Z", "4Z90"
+                // "4O",
+                // "4I", "4I90",
+                // "4L", "4L90", "4L180", "4L270",
+                // "4J", "4J90", "4J180", "4J270",
+                // "4T", "4T90", "4T180", "4T270",
+                // "4S", "4S90",
+                // "4Z", "4Z90",
 
                 // "5F", "5F90", "5F180", "5F270",
                 // "5f", "5f90", "5f180", "5f270",
@@ -200,7 +203,7 @@ public class App {
             //     sampleSizePerThread = 10000
             //
             // With 8 threads, the old target was effectively about 80,000 searches.
-            int randomPairsPerThread = 10000;
+            int randomPairsPerThread = 250;
             int randomEntangledPairCount = randomPairsPerThread * threadCount;
 
             /*
@@ -209,8 +212,8 @@ public class App {
             * Use the same seed to regenerate the same group list.
             * Replace this with System.nanoTime() for a new sample every run.
             */
-            long randomGroupSeed = 20260727L;
-            // long randomGroupSeed = System.nanoTime();
+            //long randomGroupSeed = 20260727L;
+            long randomGroupSeed = System.nanoTime();
 
             ArrayList<PieceGrouper.EntangledGroupPair> allGroups;
 
@@ -224,6 +227,7 @@ public class App {
                     areaMax,
                     monominoLimit,
                     mustHavePieceOfSize,
+                    bothPuzzlesMustHaveBlank,
                     removeSymmetries,
                     randomEntangledPairCount,
                     randomGroupSeed
@@ -238,6 +242,7 @@ public class App {
                     areaMax,
                     monominoLimit,
                     mustHavePieceOfSize,
+                    bothPuzzlesMustHaveBlank,
                     removeSymmetries
                 );
             }
@@ -284,11 +289,11 @@ public class App {
             */
             int sampleSizePerThread = randomPairsPerThread;
 
-            int csvRowCheckpoint = 1000; // Print progress every N rows.
+            int csvRowCheckpoint = 10; // Print progress every N rows.
 
             int packingsLowerLimit = 50;
             int packingsUpperLimit = 50000000;
-            int interestingDiameterThreshold = 20;
+            int interestingDiameterThreshold = 50;
             boolean connectedAB = false;
 
             /*
@@ -314,7 +319,7 @@ public class App {
                 );
 
             // Reverse order if desired.
-            // java.util.Collections.reverse(groupsToSearch);
+            java.util.Collections.reverse(groupsToSearch);
 
             // Clear all console lines for progress bars.
             System.out.print("\033[2J"); // Clear screen.
@@ -362,7 +367,7 @@ public class App {
 
                         it += sampleOnly ? -it + (int) (Math.random() * groupsToSearch.size()) : threadCount;
                         // Print progress bar for this thread on its own line
-                        if (groupNum % 10 == 0 || groupNum == totalGroups) {
+                        if (groupNum % csvRowCheckpoint == 0 || groupNum == totalGroups) {
                             int percent = (int) ((groupNum * 100.0) / totalGroups);
                             StringBuilder bar = new StringBuilder();
                             bar.append("\033[").append(threadIndex + 1).append(";0H"); // Move cursor to line

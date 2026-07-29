@@ -500,16 +500,16 @@ public class EntangledGroupSearcher {
         result.append(grouper.groupToPieceCodes(boardB.pieces, width)).append(',');
 
         SearchSummary summary = searchGroup();
-        String outputFileLive = "live_packings.csv";
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputFileLive, true))) {
-            File file = new File(outputFileLive);
-            if (file.length() == 0) {
-                writer.write("GroupID,PiecesA,PiecesB,Packings,TimeTaken(ms)\n");
-            }
-            writer.write(prefix + "," + grouper.groupToPieceCodes(boardA.pieces, width) + "," + grouper.groupToPieceCodes(boardB.pieces, width) + "," + summary.packings + "," + summary.timeMs + "\n");
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        // String outputFileLive = "live_packings.csv";
+        // try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputFileLive, true))) {
+        //     File file = new File(outputFileLive);
+        //     if (file.length() == 0) {
+        //         writer.write("GroupID,PiecesA,PiecesB,Packings,TimeTaken(ms)\n");
+        //     }
+        //     writer.write(prefix + "," + grouper.groupToPieceCodes(boardA.pieces, width) + "," + grouper.groupToPieceCodes(boardB.pieces, width) + "," + summary.packings + "," + summary.timeMs + "\n");
+        // } catch (IOException e) {
+        //     e.printStackTrace();
+        // }
 
         if (summary.packings < packingsLowerLimit || summary.packings > packingsUpperLimit) {
             result.append('>').append(packingsUpperLimit).append(",N/A,N/A,,,,," ).append(summary.timeMs).append('\n');
@@ -541,9 +541,9 @@ public class EntangledGroupSearcher {
                 e.printStackTrace();
             }
 
-            System.out.println(statePairToSideBySideString(summary.maxDiameterStartStateA, summary.maxDiameterStartStateB));
-            System.out.println();
-            System.out.println(statePairToSideBySideString(summary.maxDiameterEndStateA, summary.maxDiameterEndStateB));
+            // System.out.println(statePairToSideBySideString(summary.maxDiameterStartStateA, summary.maxDiameterStartStateB));
+            // System.out.println();
+            // System.out.println(statePairToSideBySideString(summary.maxDiameterEndStateA, summary.maxDiameterEndStateB));
         }
 
         return result.toString();
